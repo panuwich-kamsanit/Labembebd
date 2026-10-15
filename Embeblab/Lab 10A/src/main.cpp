@@ -8,6 +8,8 @@
 
 #include <BluetoothSerial.h>
 
+// จุดออกสอบ: Bluetooth Classic SPP, แยกคำสั่งตามบรรทัด และ encode/decode JSON
+// Lab 10A ใช้ Bluetooth Classic SPP สื่อสารเป็นข้อความกับ dashboard
 // Bluetooth Classic
 BluetoothSerial SerialBT;
 constexpr char BT_DEVICE_NAME[] = "ESP32-LAB10A-6730300183";
@@ -34,6 +36,7 @@ constexpr uint32_t DISPLAY_UPDATE_MS = 20;
 uint32_t lastDisplayUpdate = 0;
 
 // Bluetooth Serial status broadcast interval
+// ส่ง JSON status ให้ dashboard ทุก 1 วินาทีเมื่อมี client เชื่อมต่อ
 constexpr uint32_t BT_STATUS_MS = 1000;
 uint32_t lastBtStatus = 0;
 
@@ -65,6 +68,7 @@ bool sw4LongPressHandled = false;
 
 // Convert the logical brightness to the PWM level required by the LED wiring.
 void applyLedOutput() {
+  // รวมสถานะ on/off กับค่าความสว่าง และกลับ duty เมื่อวงจร active-low
   uint8_t output = ledState ? pwmValue : 0;
   if (LED_ACTIVE_LOW) {
     output = 255 - output;
@@ -79,6 +83,7 @@ void savePwmValue() { preferences.putUChar("pwmValue", pwmValue); }
 // Return a press event only after the input has stayed stable long enough to
 // reject mechanical switch bouncing.
 bool isPressed(uint8_t pin, ButtonState &button) {
+  // debounce แบบไม่ block: ตรวจ raw state และยอมรับหลังนิ่งครบช่วงเวลา
   bool reading = digitalRead(pin);
   uint32_t currentTime = millis();
 
@@ -115,6 +120,7 @@ float pwmVoltage() { return (static_cast<float>(pwmValue) / 255.0f) * 3.3f; }
 
 // Convert a 12-bit ADC reading (0-4095) to an 8-bit PWM value (0-255).
 uint8_t adcToPwm(uint16_t adcValue) {
+  // ปรับช่วง ADC 12-bit ไปเป็น PWM 8-bit
   return static_cast<uint8_t>((static_cast<uint32_t>(adcValue) * 255) / 4095);
 }
 
@@ -155,6 +161,7 @@ void loadLogCount() {
 }
 
 void appendLog(uint16_t adcValue) {
+  // ไม่บันทึกเมื่อ logging ปิด; FILE_APPEND รักษาประวัติเดิม
   if (!loggingEnabled) {
     return;
   }
@@ -246,6 +253,7 @@ void updateDisplay(uint16_t adcValue) {
 }
 
 void handleSwitches(uint16_t adcValue) {
+  // SW2 สลับ LED; SW3 เก็บระดับ ADC เป็นค่าความสว่าง
   if (isPressed(SW2_PIN, sw2)) {
     ledState = !ledState;
     saveLedState();
@@ -262,7 +270,7 @@ void handleSwitches(uint16_t adcValue) {
     appendLog(adcValue);
   }
 
-  // SW4 uses GPIO34, so it is read as an input and debounced manually.
+  // SW4 ใช้ GPIO34 จึงอ่าน/debounce เอง; กดสั้นสลับ logging กดค้างลบ log
   uint32_t currentTime = millis();
   bool sw4Reading = digitalRead(SW4_PIN);
   if (sw4Reading != sw4.rawState) {
@@ -299,6 +307,7 @@ void handleSwitches(uint16_t adcValue) {
 // {"adc":2048,"pwm":128,"led":true,"logging":false,"logCount":0,
 //  "savedLED":true,"savedPwm":128,"uptimeSeconds":90,"sampleId":12345}
 void sendBtStatus(uint16_t adcValue) {
+  // ประกอบสถานะเป็น JSON บรรทัดเดียวตาม protocol ที่ dashboard คาดหวัง
   uint32_t uptimeSeconds = millis() / 1000;
   static uint32_t sampleId = 0;
   sampleId++;
@@ -331,6 +340,7 @@ void sendBtStatus(uint16_t adcValue) {
 //   DELLOG          — delete log.csv
 //   READ            — force a status update
 void handleBtCommand(String cmd) {
+  // แปลคำสั่งข้อความจาก dashboard เช่น LED, PWM, LOG, SAVE, READLOG
   cmd.trim();
   if (cmd.length() == 0) return;
 
@@ -384,7 +394,7 @@ void handleBtCommand(String cmd) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // เปิด Serial Monitor
 
   // Configure the potentiometer, LED, and switches.
   pinMode(POT_PIN, INPUT);
@@ -399,18 +409,18 @@ void setup() {
   sw4.rawState = sw4.stableState = digitalRead(SW4_PIN);
   sw2.changedAt = sw3.changedAt = sw4.changedAt = millis();
 
-  // Configure the ADC as 12-bit and PWM output as 8-bit.
+  // ตั้ง resolution ของ ADC/PWM ให้ตรงกับช่วงค่าที่ใช้ในโปรแกรม
   analogReadResolution(12);
   analogWriteFrequency(5000);
   analogWriteResolution(8);
 
-  // Load saved settings; defaults are used when the keys do not exist yet.
+  // โหลดสถานะและค่าความสว่างจาก Preferences
   preferences.begin("ledPref", false);
   ledState = preferences.getBool("ledState", false);
   pwmValue = preferences.getUChar("pwmValue", 0);
   applyLedOutput();
 
-  // Mount SPIFFS. The true argument permits formatting if mounting fails.
+  // mount SPIFFS และเตรียม/นับแถวในไฟล์ CSV
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
   } else {
@@ -431,7 +441,7 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Initialize Bluetooth Classic SPP
+  // เริ่ม Bluetooth Classic Serial Port Profile เพื่อรับ/ส่งข้อความ
   if (!SerialBT.begin(BT_DEVICE_NAME)) {
     Serial.println("Bluetooth initialization failed!");
   } else {
@@ -441,6 +451,7 @@ void setup() {
 }
 
 void loop() {
+  // อ่าน potentiometer หนึ่งครั้งแล้วส่งค่าเดียวกันให้ฟังก์ชันต่าง ๆ
   uint16_t adcValue = analogRead(POT_PIN);
 
   // Press R/r in Serial Monitor to print the complete CSV log.
@@ -451,7 +462,7 @@ void loop() {
     }
   }
 
-  // Read commands from Bluetooth Serial (line-based)
+  // สะสม byte จน newline แล้วจึงส่งคำสั่งครบชุดไปให้ parser
   static String btBuffer = "";
   while (SerialBT.available()) {
     char c = SerialBT.read();
@@ -465,16 +476,16 @@ void loop() {
     }
   }
 
-  handleSwitches(adcValue);
+  handleSwitches(adcValue); // ตรวจปุ่มบนบอร์ด
 
-  // Periodically send JSON status over Bluetooth Serial
+  // ส่ง status เมื่อ client ต่ออยู่และครบช่วง BT_STATUS_MS
   uint32_t now = millis();
   if (SerialBT.hasClient() && now - lastBtStatus >= BT_STATUS_MS) {
     lastBtStatus = now;
     sendBtStatus(adcValue);
   }
 
-  // Refresh OLED every 20 ms without pausing button or Serial processing.
+  // อัปเดต OLED แบบไม่หน่วง loop
   uint32_t currentTime = millis();
   if (currentTime - lastDisplayUpdate >= DISPLAY_UPDATE_MS) {
     lastDisplayUpdate = currentTime;

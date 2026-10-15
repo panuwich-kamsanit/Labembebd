@@ -3,14 +3,16 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+// เวอร์ชันนี้เพิ่ม ADC input เพื่อวัดแรงดันจากวงจร
 #define LED 26
 #define SW2 32
 #define SW3 33
 #define SW4 34
-#define ADC 35
+#define ADC 35 // ขา ADC ที่อ่านค่า analogRead() แล้วแปลงเป็นแรงดัน
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
+// วัตถุ OLED ใช้ I2C
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 enum Mode { PWM, DAC };
@@ -30,6 +32,7 @@ String waveString = "Sine Wave";
 unsigned long lastOledUpdate = 0;
 unsigned long lastWaveUpdate = 0;
 
+// ปรับ PWM ขึ้น/ลงเมื่อกด SW2/SW3 โดยจำกัดค่าไว้ที่ 0..255
 void PWM_Mode() {
   unsigned long currentMillis = millis();
 
@@ -59,11 +62,13 @@ void PWM_Mode() {
           isFadingDown = false;
         }
       }
+      // กลับ duty ด้วย 255- เพราะชุดวงจร LED เป็น active-low
       analogWrite(LED, 255 - currentOutput);
     }
   }
 }
 
+// สร้างรูปคลื่น DAC ตามสถานะสวิตช์สองตัว
 void DAC_Mode() {
   // อัปเดตรูปคลื่นทุกๆ 50 ไมโครวินาที
   if (micros() - lastWaveUpdate > 50) {
@@ -92,10 +97,11 @@ void DAC_Mode() {
       waveString = "Square Wave";
     }
 
-    dacWrite(LED, currentDacValue);
+    dacWrite(LED, currentDacValue); // ส่งตัวอย่าง 8-bit ออกขา DAC
   }
 }
 
+// อัปเดตข้อมูล OLED โดยมี ADC เพิ่มจากเวอร์ชัน PWM/DAC ก่อนหน้า
 void OLED_Display() {
   unsigned long currentMillis = millis();
 
@@ -126,9 +132,11 @@ void OLED_Display() {
 
     // บรรทัดที่ 3: Volt หรือ ADC
     display.setCursor(0, 35);
-    int rawADC = analogRead(ADC);
+    int rawADC = analogRead(ADC); // อ่านค่า ADC 12-bit ในช่วง 0..4095 // อ่าน ADC ESP32 ช่วง 0..4095
+    // แปลง count เป็นแรงดัน โดยสมมติ reference 3.3 V
     float actualVolt = (rawADC * 3.3) / 4095.0;
 
+    // โค้ดแสดงแรงดันกลับด้านจาก 3.3 V ตามการต่อวงจร
     float displayVolt = 3.3 - actualVolt;
     if (displayVolt < 0)
       displayVolt = 0.0; // ป้องกันค่าติดลบจากการแกว่งของสัญญาณ
@@ -153,14 +161,14 @@ void OLED_Display() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // เปิด Serial Monitor
 
   pinMode(SW2, INPUT_PULLUP);
   pinMode(SW3, INPUT_PULLUP);
   pinMode(SW4, INPUT);
   pinMode(LED, OUTPUT);
 
-  Wire.begin();
+  Wire.begin(); // เริ่ม I2C สำหรับ OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("SSD1306 allocation failed"));
   }
@@ -172,7 +180,7 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-  // 1. Mode Selection (Toggle SW4 แบบกดปล่อยเพื่อสลับ)
+  // ตรวจ SW4 และ debounce 50 ms ก่อนสลับ PWM/DAC
   bool reading4 = digitalRead(SW4);
   if (reading4 != lastRead_SW4) {
     lastDebounce_SW4 = currentMillis;
@@ -181,8 +189,10 @@ void loop() {
     if (reading4 != state_SW4) {
       state_SW4 = reading4;
       if (state_SW4 == LOW) {
+        // สลับโหมดด้วย conditional operator
         currentMode = (currentMode == PWM) ? DAC : PWM;
 
+        // เรียกส่วนควบคุม PWM หรือ DAC ตามโหมดปัจจุบัน
         if (currentMode == PWM) {
           dacWrite(LED, 0);
           dacDisable(LED);

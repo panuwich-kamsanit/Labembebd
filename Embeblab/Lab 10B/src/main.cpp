@@ -11,6 +11,8 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
+// จุดออกสอบ: BLE GATT UUID/property, callback, notify และจัดรูป status packet
+// Lab 10B ใช้ BLE GATT service/characteristics แทน Bluetooth Classic SPP
 // ─── BLE UUIDs ──────────────────────────────────────────────────────────────
 #define SERVICE_UUID        "8e7c0001-6c7d-4b2f-9f5a-1d2e3f4a5b60"
 #define STATUS_UUID         "8e7c0002-6c7d-4b2f-9f5a-1d2e3f4a5b60"
@@ -69,6 +71,7 @@ ButtonState sw4 = {HIGH, HIGH, 0};
 uint32_t sw4PressedAt        = 0;
 bool     sw4LongPressHandled = false;
 
+// BLE objects และ flags ใช้ประสาน event จาก callback กับ loop หลัก
 // ─── BLE Globals ────────────────────────────────────────────────────────────
 BLEServer*         pServer         = nullptr;
 BLECharacteristic* pStatusChar     = nullptr;
@@ -93,6 +96,7 @@ void sendLogFile();
 // ═══════════════════════════════════════════════════════════════════════════
 
 void applyLedOutput() {
+  // แปลง state/brightness เป็น duty ที่เหมาะกับ LED active-low
   uint8_t output = ledState ? pwmValue : 0;
   if (LED_ACTIVE_LOW) {
     output = 255 - output;
@@ -104,6 +108,7 @@ void saveLedState() { preferences.putBool("ledState", ledState); }
 void savePwmValue() { preferences.putUChar("pwmValue", pwmValue); }
 
 bool isPressed(uint8_t pin, ButtonState &button) {
+  // debounce ปุ่มด้วยเวลาคงที่; คืน true เฉพาะขอบการกดลง
   bool     reading     = digitalRead(pin);
   uint32_t currentTime = millis();
 
@@ -135,6 +140,7 @@ float pwmVoltage() {
 }
 
 uint8_t adcToPwm(uint16_t adcValue) {
+  // map 12-bit ADC เป็น 8-bit PWM
   return static_cast<uint8_t>((static_cast<uint32_t>(adcValue) * 255) / 4095);
 }
 
@@ -170,6 +176,7 @@ void loadLogCount() {
 }
 
 void appendLog(uint16_t adcValue) {
+  // เพิ่มแถว CSV ต่อท้ายเมื่อ logging เปิดอยู่
   if (!loggingEnabled) return;
   if (!SPIFFS.exists(LOG_PATH)) {
     Serial.println("Logging is disabled or /log.csv does not exist");
@@ -293,6 +300,7 @@ void handleSwitches(uint16_t adcValue) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void buildStatusPacket(uint8_t* buf, uint16_t adcValue) {
+  // สร้าง packet 20 byte ตาม protocol: version/flags/ADC/PWM/count/time/id
   memset(buf, 0, 20);
 
   // Byte 0: Protocol version
@@ -344,6 +352,7 @@ void buildStatusPacket(uint8_t* buf, uint16_t adcValue) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void sendLogFile() {
+  // ส่ง CSV ผ่าน notify เป็น START, DATA chunks และ END frame
   if (!logNotify) {
     Serial.println("Log Notify not enabled, cannot send log");
     return;
@@ -398,6 +407,7 @@ void sendLogFile() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class ServerCallbacks : public BLEServerCallbacks {
+  // callback ทำงานเมื่อ client BLE เชื่อมต่อหรือตัดการเชื่อมต่อ
   void onConnect(BLEServer* pServer) override {
     bleConnected = true;
     Serial.println("BLE Client connected");
@@ -415,6 +425,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 // Callback for Command Characteristic writes
 class CommandCallbacks : public BLECharacteristicCallbacks {
+  // แปล byte opcode และ value ที่ client เขียนลง Command characteristic
   void onWrite(BLECharacteristic* pChar) override {
     std::string rxData = pChar->getValue();
     if (rxData.empty()) return;
@@ -499,7 +510,7 @@ class LogDescriptorCallbacks : public BLEDescriptorCallbacks {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // เปิด Serial Monitor
 
   // Configure the potentiometer, LED, and switches.
   pinMode(POT_PIN, INPUT);
@@ -514,18 +525,18 @@ void setup() {
   sw4.rawState = sw4.stableState = digitalRead(SW4_PIN);
   sw2.changedAt = sw3.changedAt = sw4.changedAt = millis();
 
-  // Configure the ADC as 12-bit and PWM output as 8-bit.
+  // ตั้งช่วง ADC 0..4095 และ PWM 0..255
   analogReadResolution(12);
   analogWriteFrequency(5000);
   analogWriteResolution(8);
 
-  // Load saved settings
+  // โหลดการตั้งค่าที่เก็บถาวรจาก Preferences
   preferences.begin("ledPref", false);
   ledState = preferences.getBool("ledState", false);
   pwmValue = preferences.getUChar("pwmValue", 0);
   applyLedOutput();
 
-  // Mount SPIFFS
+  // mount SPIFFS และกู้จำนวน records ของไฟล์ log
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
   } else {
@@ -535,7 +546,7 @@ void setup() {
     }
   }
 
-  // Start I2C and initialize the OLED
+  // เริ่ม I2C/OLED เพื่อแสดงสถานะบนอุปกรณ์
   Wire.begin();
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
     Serial.println("OLED initialization failed");
@@ -546,6 +557,7 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
+  // เริ่ม BLE server, สร้าง service และลักษณะข้อมูล status/command/log
   // ─── Initialize BLE ──────────────────────────────────────────────────
   BLEDevice::init(BLE_DEVICE_NAME);
 
@@ -579,7 +591,7 @@ void setup() {
 
   pService->start();
 
-  // Start advertising
+  // ประกาศ service เพื่อให้ client ค้นหาและเชื่อมต่อได้
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
@@ -595,6 +607,7 @@ void setup() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void loop() {
+  // อ่าน ADC ทุก loop เพื่อใช้กับปุ่ม, status packet และจอ
   uint16_t adcValue = analogRead(POT_PIN);
 
   // Serial Monitor: press R to print CSV log
@@ -605,15 +618,15 @@ void loop() {
     }
   }
 
-  handleSwitches(adcValue);
+  handleSwitches(adcValue); // ตรวจปุ่มใน loop หลัก
 
-  // Handle deferred log send request (from BLE command callback)
+  // callback ตั้ง flag; ส่งไฟล์ใน loop แทนเพื่อไม่ทำงานยาวใน callback
   if (sendLogRequested) {
     sendLogRequested = false;
     sendLogFile();
   }
 
-  // Periodically send BLE Status notifications
+  // สร้าง status packet ตามช่วงเวลา; notify เฉพาะเมื่อ client subscribe แล้ว
   uint32_t now = millis();
   if (bleConnected && now - lastBleStatus >= BLE_STATUS_MS) {
     lastBleStatus = now;
@@ -628,7 +641,7 @@ void loop() {
     }
   }
 
-  // Refresh OLED every 20 ms
+  // รีเฟรช OLED ทุก 20 ms แบบไม่ block
   uint32_t currentTime = millis();
   if (currentTime - lastDisplayUpdate >= DISPLAY_UPDATE_MS) {
     lastDisplayUpdate = currentTime;

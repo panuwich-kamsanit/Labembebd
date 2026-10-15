@@ -6,6 +6,9 @@
 #include <SPIFFS.h>
 #include <Wire.h>
 
+// จุดออกสอบ Wokwi: ADC 12-bit->PWM 8-bit, debounce, millis(), OLED และ filesystem
+// Lab นี้รวม ADC potentiometer, PWM LED, ปุ่ม debounce, OLED,
+// Preferences สำหรับข้อมูลคงอยู่ และ SPIFFS สำหรับประวัติ CSV
 // Pin Definitions
 constexpr uint8_t POT_PIN = 36;
 constexpr uint8_t LED_PIN = 5;
@@ -55,6 +58,7 @@ bool sw4LongPressHandled = false;
 
 // Convert the logical brightness to the PWM level required by the LED wiring.
 void applyLedOutput() {
+  // LED ติดได้เมื่อ ledState เป็นจริง และความสว่างมาจาก pwmValue
   uint8_t output = ledState ? pwmValue : 0;
   if (LED_ACTIVE_LOW) {
     output = 255 - output;
@@ -69,6 +73,7 @@ void savePwmValue() { preferences.putUChar("pwmValue", pwmValue); }
 // Return a press event only after the input has stayed stable long enough to
 // reject mechanical switch bouncing.
 bool isPressed(uint8_t pin, ButtonState &button) {
+  // อ่านขาปุ่มและเริ่มจับเวลาใหม่ทุกครั้งที่สัญญาณดิบเปลี่ยน
   bool reading = digitalRead(pin);
   uint32_t currentTime = millis();
 
@@ -77,6 +82,7 @@ bool isPressed(uint8_t pin, ButtonState &button) {
     button.changedAt = currentTime;
   }
 
+  // รับการเปลี่ยนสถานะหลังสัญญาณนิ่งครบ DEBOUNCE_MS; event เกิดตอนกดลง LOW
   if (currentTime - button.changedAt >= DEBOUNCE_MS &&
       reading != button.stableState) {
     button.stableState = reading;
@@ -105,6 +111,7 @@ float pwmVoltage() { return (static_cast<float>(pwmValue) / 255.0f) * 3.3f; }
 
 // Convert a 12-bit ADC reading (0-4095) to an 8-bit PWM value (0-255).
 uint8_t adcToPwm(uint16_t adcValue) {
+  // map ADC 12-bit [0,4095] เป็น PWM 8-bit [0,255]
   return static_cast<uint8_t>((static_cast<uint32_t>(adcValue) * 255) / 4095);
 }
 
@@ -215,6 +222,7 @@ void updateDisplay(uint16_t adcValue) {
 }
 
 void handleSwitches(uint16_t adcValue) {
+  // SW2 สลับสถานะ LED; SW3 บันทึกความสว่างจากค่า potentiometer
   if (isPressed(SW2_PIN, sw2)) {
     ledState = !ledState;
     saveLedState();
@@ -231,7 +239,7 @@ void handleSwitches(uint16_t adcValue) {
     appendLog(adcValue);
   }
 
-  // SW4 uses GPIO34, so it is read as an input and debounced manually.
+  // GPIO34 ไม่มี internal pull-up ของ ESP32 จึงอ่านและ debounce เอง
   uint32_t currentTime = millis();
   bool sw4Reading = digitalRead(SW4_PIN);
   if (sw4Reading != sw4.rawState) {
@@ -264,7 +272,7 @@ void handleSwitches(uint16_t adcValue) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // เปิด Serial Monitor
 
   // Configure the potentiometer, LED, and switches.
   pinMode(POT_PIN, INPUT);
@@ -279,18 +287,18 @@ void setup() {
   sw4.rawState = sw4.stableState = digitalRead(SW4_PIN);
   sw2.changedAt = sw3.changedAt = sw4.changedAt = millis();
 
-  // Configure the ADC as 12-bit and PWM output as 8-bit.
+  // ADC อ่าน 0..4095; PWM เขียน 0..255 และทำงานที่ 5 kHz
   analogReadResolution(12);
   analogWriteFrequency(5000);
   analogWriteResolution(8);
 
-  // Load saved settings; defaults are used when the keys do not exist yet.
+  // เปิด namespace ใน NVS แล้วอ่านค่าที่คงอยู่หลัง reset; ใช้ค่า default หากยังไม่เคยบันทึก
   preferences.begin("ledPref", false);
   ledState = preferences.getBool("ledState", false);
   pwmValue = preferences.getUChar("pwmValue", 0);
   applyLedOutput();
 
-  // Mount SPIFFS. The true argument permits formatting if mounting fails.
+  // mount filesystem; สร้าง CSV header หากไฟล์ยังไม่มี และนับ records เดิม
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
   } else {
@@ -300,7 +308,7 @@ void setup() {
     }
   }
 
-  // Start I2C and initialize the OLED.
+  // เริ่ม I2C แล้วเริ่มจอ SSD1306; ออกจาก setup หาก init จอล้มเหลว
   Wire.begin();
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
     Serial.println("OLED initialization failed");
@@ -313,6 +321,7 @@ void setup() {
 }
 
 void loop() {
+  // อ่าน ADC ปัจจุบันหนึ่งครั้ง ใช้ร่วมกันกับปุ่มและจอในรอบนี้
   uint16_t adcValue = analogRead(POT_PIN);
 
   // Press R/r in Serial Monitor to print the complete CSV log.
@@ -323,9 +332,9 @@ void loop() {
     }
   }
 
-  handleSwitches(adcValue);
+  handleSwitches(adcValue); // ประมวลผลปุ่มโดยไม่ใช้ delay
 
-  // Refresh OLED every 20 ms without pausing button or Serial processing.
+  // refresh จอทุก 20 ms ด้วย millis() เพื่อไม่ block การอ่านปุ่ม/Serial
   uint32_t currentTime = millis();
   if (currentTime - lastDisplayUpdate >= DISPLAY_UPDATE_MS) {
     lastDisplayUpdate = currentTime;

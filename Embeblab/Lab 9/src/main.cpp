@@ -12,6 +12,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+// จุดออกสอบ: AP/STA, route + HTTP method, JSON, MQTT publish/subscribe และ reconnect
+// Lab นี้ต่อยอด Lab 8: เพิ่ม Wi-Fi AP+STA, Web API และ MQTT telemetry/command
+// ค่าการเชื่อมต่อด้านล่างเป็น configuration ของอุปกรณ์/บริการสำหรับการทดลอง
 // Wi-Fi Credentials
 constexpr char STA_SSID[] = "TP-Link_F952";
 constexpr char STA_PASS[] = "12303465";
@@ -29,10 +32,12 @@ constexpr char TOPIC_DATA[]   = "lab09/6730300183/data";
 constexpr char TOPIC_CMD[]    = "lab09/6730300183/cmd";
 constexpr char TOPIC_STATUS[] = "lab09/6730300183/status";
 
+// HTTP server ใช้พอร์ต 80; MQTT client ทำงานผ่าน TLS socket
 WebServer server(80);
 WiFiClientSecure espClient;
 PubSubClient mqtt(espClient);
 
+// เวลา publish และ reconnect ใช้ millis() แทน delay เพื่อให้ loop ยัง responsive
 uint32_t lastMqttPublish = 0;
 constexpr uint32_t MQTT_PUBLISH_MS = 2000;
 uint32_t lastMqttReconnectAttempt = 0;
@@ -297,11 +302,13 @@ void handleSwitches(uint16_t adcValue) {
 extern const uint8_t webserver_html_start[] asm("_binary_src_webserver_html_start");
 extern const uint8_t webserver_html_end[] asm("_binary_src_webserver_html_end");
 
+// route หน้าแรกส่ง HTML ที่ build ฝังไว้ใน binary
 void handleRoot() {
   server.send(200, "text/html", (const char*)webserver_html_start);
 }
 
 void handleApiStatus() {
+  // สร้าง JSON สถานะอุปกรณ์เพื่อตอบ endpoint /api/status
   JsonDocument doc;
   doc["adc"] = analogRead(POT_PIN);
   doc["potVoltage"] = analogRead(POT_PIN) * 3.3 / 4095.0;
@@ -371,13 +378,14 @@ void handleApiDeleteLog() {
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  // Ensure payload is null-terminated for safe string operations
+  // MQTT payload ไม่รับประกัน null terminator จึงคัดลอกลง buffer แล้วเติม '\0'
   char* message = new char[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
   
   Serial.printf("MQTT Received [%s]: %s\n", topic, message);
   
+  // ทำเฉพาะ topic คำสั่ง แล้ว parse payload เป็น JSON
   if (strcmp(topic, TOPIC_CMD) == 0) {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, message);
@@ -422,6 +430,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 bool mqttReconnect() {
+  // สร้าง client ID ใหม่; ตั้ง retained status เป็น online และ subscribe topic คำสั่ง
   Serial.print("Attempting MQTT connection...");
   String clientId = "ESP32Client-";
   clientId += String(random(0xffff), HEX);
@@ -439,6 +448,7 @@ bool mqttReconnect() {
 }
 
 void handleMqtt() {
+  // ยังไม่ต่อ STA ก็ไม่พยายาม MQTT; ถ้าหลุดให้ลอง reconnect เป็นช่วง ๆ
   if (WiFi.status() != WL_CONNECTED) return;
   
   if (!mqtt.connected()) {
@@ -455,7 +465,7 @@ void handleMqtt() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // เปิด Serial Monitor
 
   // Configure the potentiometer, LED, and switches.
   pinMode(POT_PIN, INPUT);
@@ -470,18 +480,18 @@ void setup() {
   sw4.rawState = sw4.stableState = digitalRead(SW4_PIN);
   sw2.changedAt = sw3.changedAt = sw4.changedAt = millis();
 
-  // Configure the ADC as 12-bit and PWM output as 8-bit.
+  // กำหนดความละเอียด ADC/PWM และความถี่ PWM ให้ตรงกับการแปลงค่าในฟังก์ชัน
   analogReadResolution(12);
   analogWriteFrequency(5000);
   analogWriteResolution(8);
 
-  // Load saved settings; defaults are used when the keys do not exist yet.
+  // อ่านสถานะ LED และ PWM จาก Preferences (ค่าเก็บข้ามการรีเซ็ต)
   preferences.begin("ledPref", false);
   ledState = preferences.getBool("ledState", false);
   pwmValue = preferences.getUChar("pwmValue", 0);
   applyLedOutput();
 
-  // Mount SPIFFS. The true argument permits formatting if mounting fails.
+  // mount SPIFFS และเตรียมไฟล์ log CSV
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
   } else {
@@ -491,7 +501,7 @@ void setup() {
     }
   }
 
-  // Start I2C and initialize the OLED.
+  // เริ่ม I2C และ OLED; ถ้าเริ่มจอไม่ได้จะยุติ setup
   Wire.begin();
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
     Serial.println("OLED initialization failed");
@@ -502,7 +512,7 @@ void setup() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  // Initialize WiFi AP and STA
+  // เปิด AP ให้ client ต่อกับ ESP32 พร้อมกับ STA ที่ต่อ Wi-Fi ภายนอก
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(AP_SSID, AP_PASS);
   Serial.print("AP IP Address: ");
@@ -511,7 +521,7 @@ void setup() {
   WiFi.begin(STA_SSID, STA_PASS);
   Serial.println("Connecting to STA Wi-Fi in background...");
   
-  // Web Server setup
+  // ผูก URL และ HTTP method เข้ากับ handler แล้วเริ่ม server
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/status", HTTP_GET, handleApiStatus);
   server.on("/api/led", HTTP_POST, handleApiLed);
@@ -522,7 +532,7 @@ void setup() {
   server.begin();
   Serial.println("HTTP server started");
   
-  // MQTT setup
+  // ตั้ง broker/callback; setInsecure ปิดการตรวจ certificate ของ TLS
   espClient.setInsecure(); // Bypass TLS certificate validation
   mqtt.setServer(MQTT_BROKER, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
@@ -530,6 +540,7 @@ void setup() {
 }
 
 void loop() {
+  // อ่าน potentiometer สำหรับแสดงผล, log และส่ง telemetry
   uint16_t adcValue = analogRead(POT_PIN);
 
   // Press R/r in Serial Monitor to print the complete CSV log.
@@ -559,11 +570,12 @@ void loop() {
     }
   }
 
+  // ทำงานทุก iteration: ปุ่ม, HTTP client และ MQTT state machine
   handleSwitches(adcValue);
   server.handleClient();
   handleMqtt();
 
-  // Periodically publish telemetry to MQTT
+  // publish JSON telemetry เฉพาะเมื่อ MQTT เชื่อมอยู่ และครบช่วงเวลา
   if (mqtt.connected()) {
     uint32_t now = millis();
     if (now - lastMqttPublish >= MQTT_PUBLISH_MS) {
@@ -588,7 +600,7 @@ void loop() {
     }
   }
 
-  // Refresh OLED every 20 ms without pausing button or Serial processing.
+  // รีเฟรช OLED ทุก 20 ms แบบ non-blocking
   uint32_t currentTime = millis();
   if (currentTime - lastDisplayUpdate >= DISPLAY_UPDATE_MS) {
     lastDisplayUpdate = currentTime;
