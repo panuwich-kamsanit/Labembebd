@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Lab 09B - Space Command Center (Local)</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --cyan: #00f0ff;
+      --magenta: #ff0055;
+      --purple: #a700ff;
+      --glass-bg: rgba(5, 5, 15, 0.7);
+      --glass-border: rgba(0, 240, 255, 0.3);
+      --text-main: #ffffff;
+      --text-muted: #a0e8ff;
+      --ok: #00ff00;
+      --bad: #ff0000;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: radial-gradient(ellipse at bottom, #110b29 0%, #050510 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding-bottom: 40px;
+      overflow-x: hidden;
+    }
+
+    /* CSS Starfield Animation */
+    #stars,
+    #stars2,
+    #stars3 {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -1;
+      background: transparent;
+    }
+
+    #stars {
+      width: 1px;
+      height: 1px;
+      box-shadow: 120px 230px #FFF, 890px 420px #FFF, 210px 80px #FFF, 1000px 700px #FFF, 400px 300px #FFF, 750px 150px #FFF, 60px 500px #FFF, 500px 800px #FFF, 900px 100px #FFF, 1100px 600px #FFF, 300px 650px #FFF, 800px 350px #FFF;
+      animation: animStar 50s linear infinite;
+    }
+
+    #stars2 {
+      width: 2px;
+      height: 2px;
+      box-shadow: 300px 150px #FFF, 900px 700px #FFF, 450px 600px #FFF, 1200px 100px #FFF, 150px 850px #FFF, 600px 250px #FFF, 1000px 500px #FFF, 200px 300px #FFF;
+      animation: animStar 100s linear infinite;
+    }
+
+    #stars3 {
+      width: 3px;
+      height: 3px;
+      box-shadow: 100px 100px #FFF, 800px 800px #FFF, 1100px 200px #FFF, 500px 600px #FFF, 300px 400px #FFF;
+      animation: animStar 150s linear infinite;
+    }
+
+    @keyframes animStar {
+      from {
+        transform: translateY(0px);
+      }
+
+      to {
+        transform: translateY(-1000px);
+      }
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+      position: relative;
+    }
+
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(24px, 4vw, 36px);
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px rgba(0, 240, 255, 0.5), 0 0 20px rgba(0, 240, 255, 0.3);
+    }
+
+    .sub {
+      color: var(--text-muted);
+      font-size: 15px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 4px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--bad);
+      box-shadow: 0 0 10px var(--bad);
+      transition: all 0.3s;
+    }
+
+    .dot.ok {
+      background: var(--ok);
+      box-shadow: 0 0 10px var(--ok);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .card {
+      background: rgba(10, 15, 30, 0.6);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-left: 3px solid var(--cyan);
+      border-radius: 4px;
+      padding: 16px;
+      min-height: 108px;
+      transition: all 0.3s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      background: rgba(10, 15, 30, 0.8);
+      border-color: var(--cyan);
+      box-shadow: 0 5px 15px rgba(0, 240, 255, 0.15);
+    }
+
+    .label {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--cyan);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .value {
+      font-size: 32px;
+      font-weight: 700;
+      word-break: break-word;
+      line-height: 1.1;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    }
+
+    .unit {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .section {
+      margin-top: 24px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-radius: 4px;
+      padding: 24px;
+      box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.05), 0 8px 32px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+
+    .section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 30px;
+      height: 1px;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+    }
+
+    .section::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 30px;
+      height: 1px;
+      background: var(--magenta);
+      box-shadow: 0 0 10px var(--magenta);
+    }
+
+    .section h2 {
+      font-size: 16px;
+      margin: 0 0 20px;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      padding-bottom: 12px;
+      display: inline-block;
+      padding-right: 40px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 2px;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.2s ease;
+      background: rgba(0, 240, 255, 0.1);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+    }
+
+    button:hover {
+      background: var(--cyan);
+      color: #000;
+      box-shadow: 0 0 20px var(--cyan);
+    }
+
+    button:active {
+      transform: translateY(2px);
+    }
+
+    button.secondary {
+      background: rgba(167, 0, 255, 0.1);
+      border-color: var(--purple);
+      color: #df90ff;
+    }
+
+    button.secondary:hover {
+      background: var(--purple);
+      color: #fff;
+      box-shadow: 0 0 20px var(--purple);
+    }
+
+    button.danger {
+      background: rgba(255, 0, 85, 0.1);
+      border-color: var(--magenta);
+      color: #ff80aa;
+    }
+
+    button.danger:hover {
+      background: var(--magenta);
+      color: #fff;
+      box-shadow: 0 0 20px var(--magenta);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: min(420px, 100%);
+      flex: 1;
+      background: transparent;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      background: rgba(0, 240, 255, 0.2);
+      box-shadow: 0 0 5px rgba(0, 240, 255, 0.5);
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 10px;
+      background: var(--cyan);
+      cursor: pointer;
+      margin-top: -8px;
+      box-shadow: 0 0 10px var(--cyan), 0 0 20px var(--cyan);
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 12px 16px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .kv div:nth-child(odd) {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+    }
+
+    .note,
+    .demo {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-left: 3px solid var(--magenta);
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .demo {
+      border-left-color: #ffbb00;
+      display: none;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 850px) {
+      .grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 520px) {
+      .wrap {
+        padding: 14px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .top {
+        flex-direction: column;
+      }
+
+      .kv {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="stars"></div>
+  <div id="stars2"></div>
+  <div id="stars3"></div>
+  <div class="wrap">
+    <div id="demoBanner" class="demo">
+      Preview Mode: This HTML file is opened directly on a computer. Demo data is used because no ESP32 API is
+      available.
+    </div>
+
+    <div class="top">
+      <div>
+        <h1>ESP32 Lab 09B</h1>
+        <div class="sub">Wi-Fi Access Point + Embedded Web Server</div>
+      </div>
+      <div class="pill">
+        <span id="statusDot" class="dot"></span>
+        <span id="serverStatus">DISCONNECTED</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">ADC (POT)</div>
+        <div class="value"><span id="adc">0</span> <span class="unit">/ 4095</span></div>
+      </div>
+      <div class="card">
+        <div class="label">POT Voltage</div>
+        <div class="value"><span id="potVoltage">0.00</span> <span class="unit">V</span></div>
+      </div>
+      <div class="card">
+        <div class="label">Saved PWM</div>
+        <div class="value"><span id="pwm">0</span> <span class="unit">/ 255</span></div>
+      </div>
+      <div class="card">
+        <div class="label">PWM Equivalent</div>
+        <div class="value"><span id="pwmVoltage">0.00</span> <span class="unit">V</span></div>
+      </div>
+
+      <div class="card">
+        <div class="label">LED</div>
+        <div class="value" id="led">OFF</div>
+      </div>
+      <div class="card">
+        <div class="label">Logging</div>
+        <div class="value" id="logging">OFF</div>
+      </div>
+      <div class="card">
+        <div class="label">Log Count</div>
+        <div class="value" id="logCount">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Uptime</div>
+        <div class="value" id="uptime">00:00</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>AP Network</h2>
+      <div class="kv">
+        <div>AP SSID</div>
+        <div id="apSSID">-</div>
+        <div>AP IP Address</div>
+        <div id="apIP">-</div>
+        <div>Connected Clients</div>
+        <div id="clients">0</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Remote Control</h2>
+
+      <div class="row">
+        <button onclick="toggleLED()">Toggle LED</button>
+        <button class="secondary" onclick="toggleLogging()">Toggle Logging</button>
+        <button class="danger" onclick="deleteLog()">Delete Log</button>
+        <button class="secondary" onclick="openLog()">View log.csv</button>
+      </div>
+
+      <div class="row">
+        <strong>PWM:</strong>
+        <input id="pwmSlider" type="range" min="0" max="255" value="0"
+          oninput="document.getElementById('sliderValue').textContent=this.value">
+        <span id="sliderValue">0</span>
+        <button onclick="savePWM()">Save PWM</button>
+      </div>
+
+      <div class="note">
+        When connected to ESP32 AP, open <b>http://192.168.4.1</b>.
+        The page requests <b>/api/status</b> every 1 second and updates only the displayed values,
+        so the whole page does not need to reload.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEMO_MODE = (location.protocol === 'file:');
+
+    let demo = {
+      adc: 2048,
+      potVoltage: 1.65,
+      pwm: 128,
+      pwmVoltage: 1.66,
+      led: true,
+      logging: true,
+      logCount: 5,
+      uptime: "00:25",
+      apSSID: "ESP32-LAB09B",
+      apIP: "192.168.4.1",
+      clients: 1
+    };
+
+    if (DEMO_MODE) {
+      document.getElementById('demoBanner').style.display = 'block';
+    }
+
+    function setConnected(ok) {
+      document.getElementById('statusDot').className = ok ? 'dot ok' : 'dot';
+      document.getElementById('serverStatus').textContent =
+        ok ? (DEMO_MODE ? 'PREVIEW MODE' : 'CONNECTED') : 'DISCONNECTED';
+    }
+
+    function render(d) {
+      document.getElementById('adc').textContent = d.adc ?? 0;
+      document.getElementById('potVoltage').textContent =
+        Number(d.potVoltage ?? 0).toFixed(2);
+      document.getElementById('pwm').textContent = d.pwm ?? 0;
+      document.getElementById('pwmVoltage').textContent =
+        Number(d.pwmVoltage ?? 0).toFixed(2);
+      document.getElementById('led').textContent = d.led ? 'ON' : 'OFF';
+      document.getElementById('logging').textContent = d.logging ? 'ON' : 'OFF';
+      document.getElementById('logCount').textContent = d.logCount ?? 0;
+      document.getElementById('uptime').textContent = d.uptime ?? '-';
+      document.getElementById('apSSID').textContent = d.apSSID ?? '-';
+      document.getElementById('apIP').textContent = d.apIP ?? '-';
+      document.getElementById('clients').textContent = d.clients ?? 0;
+
+      document.getElementById('pwmSlider').value = d.pwm ?? 0;
+      document.getElementById('sliderValue').textContent = d.pwm ?? 0;
+    }
+
+    async function updateStatus() {
+      if (DEMO_MODE) {
+        demo.adc = Math.max(0, Math.min(4095, demo.adc + Math.floor(Math.random() * 101) - 50));
+        demo.potVoltage = demo.adc * 3.3 / 4095.0;
+        render(demo);
+        setConnected(true);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/status', { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP error');
+        const data = await response.json();
+        render(data);
+        setConnected(true);
+      } catch (e) {
+        setConnected(false);
+      }
+    }
+
+    async function postCommand(url) {
+      if (DEMO_MODE) return;
+      try {
+        await fetch(url, { method: 'POST' });
+        await updateStatus();
+      } catch (e) {
+        setConnected(false);
+      }
+    }
+
+    function toggleLED() {
+      if (DEMO_MODE) {
+        demo.led = !demo.led;
+        if (demo.logging) demo.logCount++;
+        render(demo);
+        return;
+      }
+      postCommand('/api/led');
+    }
+
+    function toggleLogging() {
+      if (DEMO_MODE) {
+        demo.logging = !demo.logging;
+        render(demo);
+        return;
+      }
+      postCommand('/api/logging');
+    }
+
+    function savePWM() {
+      const value = Number(document.getElementById('pwmSlider').value);
+
+      if (DEMO_MODE) {
+        demo.pwm = value;
+        demo.pwmVoltage = value * 3.3 / 255.0;
+        if (demo.logging) demo.logCount++;
+        render(demo);
+        return;
+      }
+
+      postCommand('/api/pwm?value=' + value);
+    }
+
+    function deleteLog() {
+      if (!confirm('Delete all records in log.csv?')) return;
+
+      if (DEMO_MODE) {
+        demo.logCount = 0;
+        render(demo);
+        return;
+      }
+
+      postCommand('/api/delete-log');
+    }
+
+    function openLog() {
+      if (DEMO_MODE) {
+        alert(
+          'Preview Mode\n\n' +
+          'Time,ADC,PWM,Voltage,LED_State\n' +
+          '00:15,2048,128,1.65,ON\n' +
+          '00:22,2048,128,1.65,OFF'
+        );
+        return;
+      }
+      window.open('/log.csv', '_blank');
+    }
+
+    updateStatus();
+    setInterval(updateStatus, 1000);
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 Lab 09 - Space Command Center</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --cyan: #00f0ff;
+      --magenta: #ff0055;
+      --purple: #a700ff;
+      --glass-bg: rgba(5, 5, 15, 0.7);
+      --glass-border: rgba(0, 240, 255, 0.3);
+      --text-main: #ffffff;
+      --text-muted: #a0e8ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: radial-gradient(ellipse at bottom, #110b29 0%, #050510 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding-bottom: 40px;
+      overflow-x: hidden;
+    }
+
+    /* CSS Starfield Animation */
+    #stars,
+    #stars2,
+    #stars3 {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -1;
+      background: transparent;
+    }
+
+    #stars {
+      width: 1px;
+      height: 1px;
+      box-shadow: 120px 230px #FFF, 890px 420px #FFF, 210px 80px #FFF, 1000px 700px #FFF, 400px 300px #FFF, 750px 150px #FFF, 60px 500px #FFF, 500px 800px #FFF, 900px 100px #FFF, 1100px 600px #FFF, 300px 650px #FFF, 800px 350px #FFF;
+      animation: animStar 50s linear infinite;
+    }
+
+    #stars2 {
+      width: 2px;
+      height: 2px;
+      box-shadow: 300px 150px #FFF, 900px 700px #FFF, 450px 600px #FFF, 1200px 100px #FFF, 150px 850px #FFF, 600px 250px #FFF, 1000px 500px #FFF, 200px 300px #FFF;
+      animation: animStar 100s linear infinite;
+    }
+
+    #stars3 {
+      width: 3px;
+      height: 3px;
+      box-shadow: 100px 100px #FFF, 800px 800px #FFF, 1100px 200px #FFF, 500px 600px #FFF, 300px 400px #FFF;
+      animation: animStar 150s linear infinite;
+    }
+
+    @keyframes animStar {
+      from {
+        transform: translateY(0px);
+      }
+
+      to {
+        transform: translateY(-1000px);
+      }
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: auto;
+      padding: 30px 24px;
+      position: relative;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 4vw, 42px);
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px rgba(0, 240, 255, 0.5), 0 0 20px rgba(0, 240, 255, 0.3);
+    }
+
+    .sub {
+      color: var(--text-muted);
+      margin-bottom: 30px;
+      font-size: 16px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .glass-panel {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-radius: 4px;
+      padding: 24px;
+      box-shadow: inset 0 0 20px rgba(0, 240, 255, 0.05), 0 8px 32px rgba(0, 0, 0, 0.5);
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .glass-panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 30px;
+      height: 1px;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+    }
+
+    .glass-panel::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 30px;
+      height: 1px;
+      background: var(--magenta);
+      box-shadow: 0 0 10px var(--magenta);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+    }
+
+    .field {
+      grid-column: span 3;
+    }
+
+    .field.topic {
+      grid-column: span 4;
+    }
+
+    .actions {
+      grid-column: span 2;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    label {
+      display: block;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      color: var(--cyan);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    input[type=text],
+    input[type=number],
+    input[type=password] {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 2px;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      transition: all 0.3s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+      background: rgba(0, 240, 255, 0.05);
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 2px;
+      padding: 12px 18px;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    button:active {
+      transform: translateY(2px);
+    }
+
+    .btn-primary {
+      background: rgba(0, 240, 255, 0.1);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+    }
+
+    .btn-primary:hover {
+      background: var(--cyan);
+      color: #000;
+      box-shadow: 0 0 20px var(--cyan);
+    }
+
+    .btn-secondary {
+      background: rgba(167, 0, 255, 0.1);
+      border-color: var(--purple);
+      color: #df90ff;
+    }
+
+    .btn-secondary:hover {
+      background: var(--purple);
+      color: #fff;
+      box-shadow: 0 0 20px var(--purple);
+    }
+
+    .btn-danger {
+      background: rgba(255, 0, 85, 0.1);
+      border-color: var(--magenta);
+      color: #ff80aa;
+    }
+
+    .btn-danger:hover {
+      background: var(--magenta);
+      color: #fff;
+      box-shadow: 0 0 20px var(--magenta);
+    }
+
+    .statusbar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 12px 16px;
+      border: 1px solid rgba(0, 240, 255, 0.1);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      background: #333;
+      display: inline-block;
+      box-shadow: 0 0 0 2px rgba(51, 51, 51, 0.5);
+      transition: all 0.3s;
+      border-radius: 50%;
+    }
+
+    .dot.ok {
+      background: #00ff00;
+      box-shadow: 0 0 10px #00ff00, 0 0 0 2px rgba(0, 255, 0, 0.2);
+    }
+
+    .dot.bad {
+      background: #ff0000;
+      box-shadow: 0 0 10px #ff0000, 0 0 0 2px rgba(255, 0, 0, 0.2);
+    }
+
+    code {
+      background: rgba(0, 240, 255, 0.1);
+      padding: 4px 8px;
+      font-family: monospace;
+      color: var(--cyan);
+      font-size: 13px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .card {
+      background: rgba(10, 15, 30, 0.6);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-left: 3px solid var(--cyan);
+      padding: 20px;
+      transition: all 0.3s;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      background: rgba(10, 15, 30, 0.8);
+      border-color: var(--cyan);
+      box-shadow: 0 5px 15px rgba(0, 240, 255, 0.15);
+    }
+
+    .card .k {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    .card .v {
+      font-size: 42px;
+      font-weight: 700;
+      margin: 4px 0;
+      line-height: 1;
+      color: #fff;
+      text-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+    }
+
+    .card .u {
+      font-size: 14px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 8px 0;
+      margin-top: 5px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid #333;
+      color: #666;
+    }
+
+    .badge.on {
+      background: rgba(0, 255, 0, 0.1);
+      border-color: #00ff00;
+      color: #00ff00;
+      box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.2);
+      text-shadow: 0 0 5px #00ff00;
+    }
+
+    .badge.off {
+      background: rgba(255, 0, 0, 0.1);
+      border-color: #ff0000;
+      color: #ff0000;
+      box-shadow: inset 0 0 10px rgba(255, 0, 0, 0.2);
+      text-shadow: 0 0 5px #ff0000;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 24px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      flex: 1;
+      min-width: 180px;
+      background: transparent;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      background: rgba(0, 240, 255, 0.2);
+      box-shadow: 0 0 5px rgba(0, 240, 255, 0.5);
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 10px;
+      background: var(--cyan);
+      cursor: pointer;
+      margin-top: -8px;
+      box-shadow: 0 0 10px var(--cyan), 0 0 20px var(--cyan);
+    }
+
+    canvas {
+      width: 100%;
+      height: 280px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+
+    pre {
+      margin: 0;
+      background: rgba(0, 0, 0, 0.6);
+      color: #00ffcc;
+      padding: 16px;
+      min-height: 220px;
+      max-height: 330px;
+      overflow: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      border: 1px solid rgba(0, 240, 255, 0.1);
+      box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.9);
+    }
+
+    .log-time {
+      color: var(--purple);
+    }
+
+    .hint {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hint::before {
+      content: '►';
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--magenta);
+    }
+
+    h3 {
+      margin-top: 0;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: inline-block;
+      padding-right: 40px;
+    }
+
+    @media(max-width: 1024px) {
+
+      .field,
+      .field.topic,
+      .actions {
+        grid-column: span 12;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .two {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media(max-width: 600px) {
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .wrap {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>MQTT Telemetry Dashboard</h1>
+    <div class="sub">High-Performance WebSocket Monitor for ESP32</div>
+
+    <div class="glass-panel">
+      <div class="grid">
+        <div class="field topic">
+          <label>TLS WebSocket URL</label>
+          <input id="url" type="text" value="wss://b7a326b808604b8d8dbaa1de965d41e7.s1.eu.hivemq.cloud"
+            placeholder="wss://xxxx.s1.eu.hivemq.cloud">
+        </div>
+        <div class="field">
+          <label>WebSocket Port</label>
+          <input id="port" type="number" value="8884" min="1" max="65535">
+        </div>
+        <div class="field">
+          <label>Username</label>
+          <input id="username" type="text" value="esp32" autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input id="password" type="password" value="12345678" placeholder="MQTT password"
+            autocomplete="current-password">
+        </div>
+        <div class="field topic">
+          <label>Base Topic</label>
+          <input id="topic" type="text" value="embsys/lab09/group01" placeholder="embsys/lab09/group01">
+        </div>
+        <div class="actions">
+          <button id="connectBtn" class="btn-primary">Connect</button>
+          <button id="disconnectBtn" class="btn-secondary">Disconnect</button>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <div style="display:flex;align-items:center;gap:8px;margin-right:auto;">
+          <span id="connDot" class="dot"></span>
+          <strong id="connText" style="color:#fff;">Disconnected</strong>
+        </div>
+        <span>Data: <code id="dataTopic">-</code></span>
+        <span>Cmd: <code id="cmdTopic">-</code></span>
+        <span>Status: <code id="statusTopic">-</code></span>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="k">ADC (12-bit)</div>
+        <div class="v" id="adc">--</div>
+        <div class="u">0 - 4095</div>
+      </div>
+      <div class="card">
+        <div class="k">Saved PWM</div>
+        <div class="v" id="pwm">--</div>
+        <div class="u">0 - 255</div>
+      </div>
+      <div class="card">
+        <div class="k">Voltage</div>
+        <div class="v" id="voltage">--</div>
+        <div class="u">Volts</div>
+      </div>
+      <div class="card">
+        <div class="k">Records</div>
+        <div class="v" id="logCount">--</div>
+        <div class="u">in log.csv</div>
+      </div>
+      <div class="card">
+        <div class="k">LED State</div>
+        <div class="v"><span id="ledBadge" class="badge">--</span></div>
+        <div class="u">Preferences</div>
+      </div>
+      <div class="card">
+        <div class="k">Logging</div>
+        <div class="v"><span id="logBadge" class="badge">--</span></div>
+        <div class="u">SPIFFS</div>
+      </div>
+      <div class="card">
+        <div class="k">Wi-Fi RSSI</div>
+        <div class="v" id="rssi">--</div>
+        <div class="u" id="staIp">STA IP: --</div>
+      </div>
+      <div class="card">
+        <div class="k">System</div>
+        <div class="v"><span id="mqttBadge" class="badge">--</span></div>
+        <div class="u">MQTT Link</div>
+      </div>
+    </div>
+
+    <div class="glass-panel two" style="margin-top:24px">
+      <div>
+        <h3>Real-time Telemetry</h3>
+        <canvas id="chart" width="800" height="280"></canvas>
+        <div class="hint">Live data stream plotting ADC (scaled to 0-255) vs PWM</div>
+      </div>
+      <div>
+        <h3>Command Center</h3>
+        <div class="row">
+          <button class="btn-primary" style="flex:1" onclick="sendCmd('led','toggle')">Toggle LED</button>
+          <button class="btn-secondary" style="flex:1" onclick="sendCmd('logging','toggle')">Toggle Logging</button>
+        </div>
+
+        <div
+          style="background:rgba(0,0,0,0.2); padding:16px; border-radius:12px; margin-top:20px; border:1px solid rgba(255,255,255,0.05);">
+          <label style="display:flex; justify-content:space-between;">
+            <span>PWM Output Level</span>
+            <b id="pwmLabel" style="color:var(--primary); font-size:16px;">128</b>
+          </label>
+          <div class="row" style="margin-bottom:0; margin-top:12px;">
+            <input id="pwmSlider" type="range" min="0" max="255" value="128" oninput="pwmLabel.textContent=this.value">
+            <button class="btn-primary" onclick="sendPwm()">Apply</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:20px">
+          <button class="btn-secondary" style="flex:1" onclick="sendCmd('request','now')">Sync Data</button>
+          <button class="btn-danger" style="flex:1" onclick="deleteLog()">Wipe Log</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-panel">
+      <h3>Activity Console</h3>
+      <pre id="console"></pre>
+    </div>
+  </div>
+
+  <script>
+    let client = null;
+    let baseTopic = '';
+    const samples = [];
+
+    const $ = id => document.getElementById(id);
+
+    function log(msg) {
+      const t = new Date().toLocaleTimeString();
+      $('console').innerHTML += `<span class="log-time">[${t}]</span> ${msg}\n`;
+      $('console').scrollTop = $('console').scrollHeight;
+    }
+
+    function setConnection(ok, text) {
+      $('connDot').className = 'dot ' + (ok ? 'ok' : 'bad');
+      $('connText').textContent = text;
+    }
+
+    function makeBrokerUrl() {
+      let host = $('url').value.trim().replace(/\/$/, '');
+      if (!/^wss?:\/\//i.test(host)) host = 'wss://' + host;
+      const port = $('port').value.trim();
+      const hasMqttPath = /\/mqtt$/i.test(host);
+      const base = hasMqttPath ? host.slice(0, -5) : host;
+      const hasPort = /^wss?:\/\/[^/]+:\d+/i.test(base);
+      const withPort = hasPort || !port ? base : `${base}:${port}`;
+      return `${withPort}/mqtt`;
+    }
+
+    function updateTopicLabels() {
+      baseTopic = $('topic').value.trim().replace(/\/$/, '');
+      $('dataTopic').textContent = baseTopic ? baseTopic + '/data' : '-';
+      $('cmdTopic').textContent = baseTopic ? baseTopic + '/cmd' : '-';
+      $('statusTopic').textContent = baseTopic ? baseTopic + '/status' : '-';
+    }
+
+    function connectBroker() {
+      if (typeof mqtt === 'undefined') return alert('MQTT.js failed to load.');
+      updateTopicLabels();
+      if (!baseTopic) return alert('Base Topic required.');
+
+      if (client) try { client.end(true); } catch (e) { }
+
+      const brokerUrl = makeBrokerUrl();
+      const clientId = 'web-lab09-' + Math.random().toString(16).slice(2, 10);
+      log(`Initializing connection to ${brokerUrl}`);
+      setConnection(false, 'Connecting...');
+
+      localStorage.setItem('lab09_url', $('url').value);
+      localStorage.setItem('lab09_port', $('port').value);
+      localStorage.setItem('lab09_username', $('username').value);
+      localStorage.setItem('lab09_topic', $('topic').value);
+
+      client = mqtt.connect(brokerUrl, {
+        clientId,
+        username: $('username').value.trim(),
+        password: $('password').value,
+        clean: true,
+        connectTimeout: 5000,
+        reconnectPeriod: 2000,
+        keepalive: 30
+      });
+
+      client.on('connect', () => {
+        setConnection(true, 'Connected');
+        client.subscribe([baseTopic + '/data', baseTopic + '/status'], err => {
+          if (err) log('Subscribe error: ' + err.message);
+          else log('Subscribed successfully. Waiting for telemetry...');
+        });
+        sendCmd('request', 'now');
+      });
+
+      client.on('reconnect', () => setConnection(false, 'Reconnecting...'));
+      client.on('close', () => setConnection(false, 'Disconnected'));
+      client.on('error', err => { setConnection(false, 'Error'); log('ERROR: ' + err.message); });
+
+      client.on('message', (topic, payload) => {
+        const text = payload.toString();
+        if (topic.endsWith('/status')) {
+          log(`STATUS: Node is ${text.toUpperCase()}`);
+          return;
+        }
+        if (!topic.endsWith('/data')) return;
+        try {
+          updateTelemetry(JSON.parse(text));
+        } catch (e) {
+          log('Parse Error: Invalid JSON received');
+        }
+      });
+    }
+
+    function disconnectBroker() {
+      if (client) client.end(true);
+      client = null;
+      setConnection(false, 'Disconnected');
+      log('Connection terminated by user');
+    }
+
+    function sendCmd(cmd, value) {
+      if (!client || !client.connected) return alert('Not connected to MQTT Broker');
+      const payload = JSON.stringify({ cmd, value });
+      client.publish(baseTopic + '/cmd', payload);
+      log(`TX CMD: ${payload}`);
+    }
+
+    function sendPwm() { sendCmd('pwm', Number($('pwmSlider').value)); }
+    function deleteLog() { if (confirm('Erase all records in log.csv?')) sendCmd('deleteLog', 'now'); }
+
+    function badge(el, on) {
+      el.textContent = on ? 'ONLINE' : 'OFFLINE';
+      if (el.id === 'ledBadge' || el.id === 'logBadge') el.textContent = on ? 'ACTIVE' : 'IDLE';
+      el.className = 'badge ' + (on ? 'on' : 'off');
+    }
+
+    function updateTelemetry(d) {
+      $('adc').textContent = d.adc ?? '--';
+      $('pwm').textContent = d.pwm ?? '--';
+      $('voltage').textContent = (d.voltage != null) ? Number(d.voltage).toFixed(2) : '--';
+      $('logCount').textContent = d.logCount ?? '--';
+      badge($('ledBadge'), !!d.led);
+      badge($('logBadge'), !!d.logging);
+      badge($('mqttBadge'), !!d.mqtt);
+      $('rssi').textContent = d.staConnected ? `${d.rssi} dBm` : 'No Wi-Fi';
+      $('staIp').textContent = `IP: ${d.staIP ?? '--'} | UP: ${d.uptime ?? '--'}`;
+
+      if (d.pwm != null) {
+        $('pwmSlider').value = d.pwm;
+        $('pwmLabel').textContent = d.pwm;
+      }
+
+      samples.push({ adc: Number(d.adc || 0), pwm: Number(d.pwm || 0) });
+      if (samples.length > 60) samples.shift();
+      drawChart();
+    }
+
+    // Neon Chart Drawing
+    function drawChart() {
+      const c = $('chart'), ctx = c.getContext('2d');
+      const w = c.width, h = c.height, pad = 40;
+      ctx.clearRect(0, 0, w, h);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.1)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 5; i++) {
+        const y = pad + (h - 2 * pad) * i / 5;
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+      }
+
+      ctx.fillStyle = '#a0e8ff'; ctx.font = '12px Inter';
+      ctx.fillText('255', 10, pad + 5); ctx.fillText('0', 22, h - pad + 5);
+
+      if (samples.length < 2) return;
+
+      const plot = (key, color) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 15;
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        samples.forEach((s, i) => {
+          const val = key === 'adc' ? (s.adc / 4095 * 255) : s.pwm;
+          const x = pad + (w - 2 * pad) * i / (Math.max(samples.length - 1, 1));
+          const y = h - pad - (h - 2 * pad) * (val / 255);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      };
+
+      plot('pwm', '#ff0055'); // Magenta
+      plot('adc', '#00f0ff'); // Cyan
+
+      // Legend
+      ctx.font = '12px Inter';
+      ctx.fillStyle = '#00f0ff'; ctx.fillText('■ ADC (Scaled)', pad, 20);
+      ctx.fillStyle = '#ff0055'; ctx.fillText('■ PWM Out', pad + 120, 20);
+    }
+
+    $('connectBtn').addEventListener('click', connectBroker);
+    $('disconnectBtn').addEventListener('click', disconnectBroker);
+    $('topic').addEventListener('input', updateTopicLabels);
+
+    if (localStorage.getItem('lab09_url')) $('url').value = localStorage.getItem('lab09_url');
+    if (localStorage.getItem('lab09_port')) $('port').value = localStorage.getItem('lab09_port');
+    if (localStorage.getItem('lab09_username')) $('username').value = localStorage.getItem('lab09_username');
+    if (localStorage.getItem('lab09_topic')) $('topic').value = localStorage.getItem('lab09_topic');
+    updateTopicLabels();
+    drawChart();
+  </script>
+</body>
+
+</html>
